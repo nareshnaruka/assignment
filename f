@@ -1,0 +1,56 @@
+#!/bin/bash
+# Reported Issues will be added even if the conditions are true
+# Issue are logged only once
+# Limitation : Tested for single mount point
+
+generateCSV()
+{
+	#CSV format srNumber,srStatus,MessageType,Status,Time,IPADDRESS,Message
+	echo "$1,$2,$3,$4,$5,$6,$7" >> ReportingSystem
+}
+
+updateSR()
+{
+	MESSAGETYPE="$1"
+	MESSAGE="$2"
+	echo "DEBUG- $MESSAGETYPE"
+	CMPLSTR=$(grep `hostname -s` ReportingSystem | grep $MESSAGETYPE |grep -v 'NA' |tail -1 |grep 'CLOSE'|awk -F',' '{print $1","$2}')
+	REPORTEDFLAG=$(grep `hostname -s` ReportingSystem | grep $MESSAGETYPE | grep -v 'NA' |tail -1 |grep 'CLOSE'| wc -l )
+	#if REPORTEDFLAG is 1, that means last entry for server and message type is CLOSE, then only ADD
+	if [ $REPORTEDFLAG == 1 ] ; then
+        	ISSUENUMBER=$(cat  ReportingSystem |grep -v 'NA' |  awk -F',' '{print $1}' | sort | uniq | tail -1)
+        	ISSUENUMBER=`expr $ISSUENUMBER + 1`
+        	generateCSV "$ISSUENUMBER" "NEW" "$MESSAGETYPE" "FAIL" "$DATE" "`hostname -s`" "$MESSAGE"
+	else 
+		echo "$MESSAGETYPE Issue already reported, pls attend "
+	fi
+}
+
+CURRENT=$(df / | grep / | awk '{ print $5,$6}' | sed 's/%//g')
+CRITICAL=90
+WARNING=80
+DATE=$(date "+%b %_d %H:%M:%S")
+ISSUENUMBER=0
+REPORTEDFLAG=0
+
+#DiskSpace Alert
+if [ "`echo $CURRENT| awk '{print $1}'`" -gt "$CRITICAL" ] ; then
+	echo 'FAIL!!! Disk Space Alert' 
+        echo "checking earlier reported incident"
+        updateSR "diskSpace" "Disk Space Alert!"
+else
+	echo 'PASS!!! Disk Space Alert' 
+	generateCSV "NA" "NA" "diskSpace" "PASS" "$DATE" "`hostname -s`" "Disk Space Alert"
+fi
+
+echo ""
+#CPU Alert!
+CPUPERCENTAGE="$(ps aux --sort=-%cpu | awk 'NR==1{print $2,$3,$11}NR>1{if($3>=60) print $2,$3,$11}' | tail -1 |grep -v PID | awk '{print $2}'| awk -F'.' '{ print $1}')"
+#if [ `ps aux --sort=-%cpu | awk 'NR==1{print $2,$3,$11}NR>1{if($3>=60) print $2,$3,$11}' | tail -1 |grep -v PID | awk '{print $2}'| awk -F'.' '{ print $1}'` -gt $CRITICAL ] ;
+if [ "n${CPUPERCENTAGE}" == "n" ] ; then
+	echo 'PASS!!! No High CPU' 
+	generateCSV "NA" "NA" "diskSpace" "PASS" "$DATE" "`hostname -s`" "No High CPU Alert"
+else
+	echo 'FAIL!!! High CPU'
+	updateSR "highCPU" "High CPU"
+fi

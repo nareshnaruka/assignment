@@ -1,0 +1,46 @@
+updateSR()
+{
+HOSTNAME=""
+SRSTATUS=""
+SRCLOSEDSTATUS=""
+SRDESCRIPTION=""
+
+echo -n "Enter SR Number:"
+read SRNUMBER
+
+DATE=$(date "+%b %_d %H:%M:%S")
+#search for SR number, SR number 1 might satisfy 1, 10,111 etc
+HOSTNAME="$(grep ^$SRNUMBER, ReportingSystem | tail -1 | awk -F',' '{print $6}')"
+#if no HOSTNAME, then the host/SR doesnt exist, checking only for hostname
+if [ "N$HOSTNAME" == "N" ] ; then
+echo "SR Number : $SRNUMBER do not exist"
+else
+echo -n "Description:"
+read SRDESCRIPTION
+
+#echo $HOSTNAME
+	while :
+	do
+		echo -n "Update Status, select any one from ASG, WIP, CLOSE:"
+		read SRSTATUS
+		case $SRSTATUS in
+			"ASG"|"WIP"|"CLOSE")
+				#check if ticket is already closed
+			        SRCLOSEDSTATUS="$(grep ^$SRNUMBER, ReportingSystem | tail -1 | awk -F',' '{print $2}')"	
+				echo "Status - $SRCLOSEDSTATUS"
+				if [ "${SRCLOSEDSTATUS}" == "CLOSE" ] ; then
+					echo "SRNumber : $SRNUMBER is already closed, it cannot be updated"
+				else
+                			echo "$SRNUMBER,$SRSTATUS,SCRIPTUPD,$DATE,$SRDESCRIPTION" >> ReportingSystem
+				fi
+				break ;;
+			*)
+				echo "Incorrect Entry"
+				;;
+  		esac
+	done
+fi
+}
+
+updateSR
+echo 

@@ -1,0 +1,2 @@
+time sh -c 'fallocate -l 6G large; sync'
+
