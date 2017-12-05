@@ -1,0 +1,5 @@
+UNITOFTIME=30
+echo -n "Enter the String to search:"
+read searchString
+searchStringCount=$(awk -v d1="$(date --date="-$UNITOFTIME min" "+%b %_d %H:%M")" -v d2="$(date "+%b %_d %H:%M")" '$0 > d1 && $0 < d2 || $0 ~ d2' /var/log/syslog | grep "$searchString"| wc -l)
+echo "Message $searchString appears : $searchStringCount times in last $UNITOFTIME minutes" 
