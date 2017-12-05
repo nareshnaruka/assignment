@@ -13,11 +13,12 @@ updateSR()
 {
 	MESSAGETYPE="$1"
 	MESSAGE="$2"
-	echo "DEBUG- $MESSAGETYPE"
+	#echo "DEBUG- $MESSAGETYPE"
 	CMPLSTR=$(grep `hostname -s` ReportingSystem | grep $MESSAGETYPE |grep -v 'NA' |tail -1 |grep 'CLOSE'|awk -F',' '{print $1","$2}')
 	REPORTEDFLAG=$(grep `hostname -s` ReportingSystem | grep $MESSAGETYPE | grep -v 'NA' |tail -1 |grep 'CLOSE'| wc -l )
-        echo "DEBUG - $REPORTEDFLAG "
+        #echo "DEBUG - $REPORTEDFLAG "
 	#if REPORTEDFLAG is 1, that means last entry for server and message type is CLOSE, then only ADD
+	#Added OR condition, since first time No entry is returned which was skipping updating ReportingSystem file
 	if [ $REPORTEDFLAG == 1 -o `grep "^[1-9].*$MESSAGETYPE" ReportingSystem | wc -l`  == 0 ] ; then
         	ISSUENUMBER=$(cat  ReportingSystem |grep -v 'NA' |  awk -F',' '{print $1}' | sort | uniq | tail -1)
         	ISSUENUMBER=`expr $ISSUENUMBER + 1`
