@@ -1,0 +1,203 @@
+#!/bin/bash
+# Reported Issues will be added even if the conditions are true
+# Issue are logged only once
+# Limitation : Tested for single mount point
+
+# ----------------------------------
+# Step #1: Define variables
+# ----------------------------------
+CURRENT=$(df / | grep / | awk '{ print $5,$6}' | sed 's/%//g')
+DATE=$(date "+%b %_d %H:%M:%S")
+ISSUENUMBER=0
+REPORTEDFLAG=0
+UNITOFTIME=30
+RED='\033[0;31m'
+NC='\033[0m' 
+reset=`tput sgr0`
+
+# ----------------------------------
+# Step #2: User Defined threshold
+# ----------------------------------
+#THRESHHOLD LIMITS SECTION
+CRITICAL=90
+WARNING=80
+
+# ----------------------------------
+# Step #3: User defined function
+# ----------------------------------
+
+generateCSV()
+{
+	#CSV format srNumber,srStatus,MessageType,Status,Time,IPADDRESS,Message
+	echo "$1,$2,$3,$4,$5,$6,$7" >> ReportingSystem
+}
+
+updateSR()
+{
+	MESSAGETYPE="$1"
+	MESSAGE="$2"
+	#echo "DEBUG- $MESSAGETYPE"
+	CMPLSTR=$(grep `hostname -s` ReportingSystem | grep $MESSAGETYPE |grep -v 'NA' |tail -1 |grep 'CLOSE'|awk -F',' '{print $1","$2}')
+	REPORTEDFLAG=$(grep `hostname -s` ReportingSystem | grep $MESSAGETYPE | grep -v 'NA' |tail -1 |grep 'CLOSE'| wc -l )
+        #echo "DEBUG - $REPORTEDFLAG "
+	#if REPORTEDFLAG is 1, that means last entry for server and message type is CLOSE, then only ADD
+	#Added OR condition, since first time No entry is returned which was skipping updating ReportingSystem file
+	if [ $REPORTEDFLAG == 1 -o `grep "^[1-9].*$MESSAGETYPE" ReportingSystem | wc -l`  == 0 ] ; then
+        	ISSUENUMBER=$(cat  ReportingSystem |grep -v 'NA' |  awk -F',' '{print $1}' | sort | uniq | tail -1)
+        	ISSUENUMBER=`expr $ISSUENUMBER + 1`
+        	generateCSV "$ISSUENUMBER" "NEW" "$MESSAGETYPE" "FAIL" "$DATE" "`hostname -s`" "$MESSAGE"
+	else 
+		echo;echo -e "\033[5m $MESSAGETYPE Issue already reported, pls attend \033[0m"
+	fi
+}
+
+
+diskSpaceAlert()
+{
+#DiskSpace Alert
+if [ "`echo $CURRENT| awk '{print $1}'`" -gt "$CRITICAL" ] ; then
+	#echo 'FAIL!!! Disk Space Alert' 
+        printf "Disk Space Status : ${RED}FAIL!!!${reset}\n"
+        #echo "checking earlier reported incident"
+        updateSR "diskSpace" "Disk Space Alert!"
+else
+	echo 'Disk Space Alert : PASS' 
+	generateCSV "NA" "NA" "diskSpace" "PASS" "$DATE" "`hostname -s`" "Disk Space Alert"
+fi
+pause
+}
+
+#CPU Alert!
+highCpuAlert()
+{
+CPUPERCENTAGE="$(ps aux --sort=-%cpu | awk 'NR==1{print $2,$3,$11}NR>1{if($3>=60) print $2,$3,$11}' | tail -1 |grep -v PID | awk '{print $2}'| awk -F'.' '{ print $1}')"
+#if [ `ps aux --sort=-%cpu | awk 'NR==1{print $2,$3,$11}NR>1{if($3>=60) print $2,$3,$11}' | tail -1 |grep -v PID | awk '{print $2}'| awk -F'.' '{ print $1}'` -gt $CRITICAL ] ;
+if [ "n${CPUPERCENTAGE}" == "n" ] ; then
+	echo 'CPU usage: PASS(CPU % utilisation is low)' 
+	generateCSV "NA" "NA" "diskSpace" "PASS" "$DATE" "`hostname -s`" "No High CPU Alert"
+else
+	#echo 'FAIL!!! High CPU'
+	printf "CPU Status : ${RED}FAIL!!!${reset}\n"
+	updateSR "highCPU" "High CPU"
+        read -p "Want to see high CPU/MEM process(Y/N)..:" confirmCode
+        if [ "$confirmCode" == "Y" -o "$confirmCode" == "y" ] ; then
+        	ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu,-%mem | head
+        fi
+
+        
+fi
+pause
+}
+
+listofRunningServices()
+{
+echo "`service --status-all | grep ' + ' | awk '{print $4}'`"
+pause
+}
+
+searchString()
+{
+echo -n "Enter the String to search:"
+read searchString
+searchStringCount=$(awk -v d1="$(date --date="-$UNITOFTIME min" "+%b %_d %H:%M")" -v d2="$(date "+%b %_d %H:%M")" '$0 > d1 && $0 < d2 || $0 ~ d2' /var/log/syslog | grep "$searchString"| wc -l)
+if [ $searchStringCount -gt 0 ] ; then
+printf "Message $searchString appears : ${RED}$searchStringCount ${reset} times in last $UNITOFTIME minutes\n"
+else
+printf "Message $searchString does'nt appear in log file\n"
+fi
+pause
+}
+
+updateSR()
+{
+HOSTNAME=""
+SRSTATUS=""
+SRCLOSEDSTATUS=""
+SRDESCRIPTION=""
+
+echo -n "Enter SR Number:"
+read SRNUMBER
+
+DATE=$(date "+%b %_d %H:%M:%S")
+#search for SR number, SR number 1 might satisfy 1, 10,111 etc
+HOSTNAME="$(grep ^$SRNUMBER, ReportingSystem | tail -1 | awk -F',' '{print $6}')"
+#if no HOSTNAME, then the host/SR doesnt exist, checking only for hostname
+if [ "N$HOSTNAME" == "N" ] ; then
+echo "SR Number : $SRNUMBER do not exist"
+else
+echo -n "Description:"
+read SRDESCRIPTION
+
+#echo $HOSTNAME
+	while :
+	do
+		echo -n "Update Status, select any one from ASG, WIP, CLOSE:"
+		read SRSTATUS
+		case $SRSTATUS in
+			"ASG"|"WIP"|"CLOSE")
+				#check if ticket is already closed
+			        SRCLOSEDSTATUS="$(grep ^$SRNUMBER, ReportingSystem | tail -1 | awk -F',' '{print $2}')"	
+				echo "Status - $SRCLOSEDSTATUS"
+				if [ "${SRCLOSEDSTATUS}" == "CLOSE" ] ; then
+					echo "SRNumber : $SRNUMBER is already closed, it cannot be updated"
+				else
+                			echo "$SRNUMBER,$SRSTATUS,SCRIPTUPD,$DATE,$SRDESCRIPTION" >> ReportingSystem
+				fi
+				break ;;
+			*)
+				echo "Incorrect Entry"
+				;;
+  		esac
+	done
+fi
+pause
+}
+
+
+pause(){
+  read -p "Press [Enter] key to continue..." DummyEnterKey
+}
+
+
+# function to display menus
+show_menus() {
+	clear
+	echo "~~~~~~~~~~~~~~~~~~~~~"	
+	echo " M A I N - M E N U"
+	echo "~~~~~~~~~~~~~~~~~~~~~"
+	echo "1. Disk Space Check"
+	echo "2. High CPU Check"
+        echo "3. List of Running Services"
+        echo "4. Search String in logs"
+        echo "5. Want to update SR"
+	echo "6. Exit"
+}
+
+read_options(){
+	local choice
+	read -p "Enter choice [ 1 - 5] " choice
+	case $choice in
+		1) diskSpaceAlert ;;
+		2) highCpuAlert ;;
+                3) listofRunningServices ;;
+		4) searchString ;;
+                5) updateSR ;;
+		6) exit 0;;
+		*) echo -e "${RED}Error...${STD}" && sleep 2
+	esac
+}
+ 
+# ----------------------------------------------
+# Step #4: Trap CTRL+C, CTRL+Z and quit singles
+# ----------------------------------------------
+trap '' SIGINT SIGQUIT SIGTSTP
+ 
+# -----------------------------------
+# Step #5: Main logic - infinite loop
+# ------------------------------------
+while true
+do
+ 
+	show_menus
+	read_options
+done
